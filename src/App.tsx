@@ -1,16 +1,17 @@
 /* eslint-disable jsx-a11y/control-has-associated-label */
 import cn from 'classnames';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
-import {
-  USER_ID,
-  addTodo,
-  getTodos,
-  filterTodos,
-  deleteTodo,
-} from './api/todos';
+import { USER_ID, addTodo, getTodos, deleteTodo } from './api/todos';
+import { ErrorType } from './types/ErrorType';
+import { filterTodos } from './components/TodoFilter/filterTodos';
 
-import { UserWarning } from './UserWarning';
 import { Todo } from './types/Todo';
 import { Status } from './types/Status';
 import { TodoFilter } from './components/TodoFilter';
@@ -20,24 +21,27 @@ export const App: React.FC = () => {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [newTodoTitle, setNewTodoTitle] = useState('');
   const [tempTodo, setTempTodo] = useState<Todo | null>(null);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState<ErrorType>(ErrorType.Default);
   const [filter, setFilter] = useState<Status>(Status.All);
   const [processingTodos, setProcessingTodos] = useState<number[]>([]);
 
   const addInputRef = useRef<HTMLInputElement>(null);
-  const allAreCompleted = todos.every(todo => todo.completed);
-  const hasTodos = todos.length > 0;
+  const allAreCompleted = useMemo(
+    () => todos.every(todo => todo.completed),
+    [todos],
+  );
+  const hasTodos = useMemo(() => todos.length > 0, [todos]);
 
   const filteredTodos = useMemo(
     () => filterTodos(todos, filter),
     [todos, filter],
   );
 
-  const handleError = (error: string) => {
+  const handleError = (error: ErrorType) => {
     setErrorMsg(error);
 
     setTimeout(() => {
-      setErrorMsg('');
+      setErrorMsg(ErrorType.Default);
     }, 3000);
   };
 
@@ -45,7 +49,7 @@ export const App: React.FC = () => {
     e.preventDefault();
 
     if (!newTodoTitle.trim()) {
-      handleError('Title should not be empty');
+      handleError(ErrorType.EmptyTitle);
 
       return;
     }
@@ -63,7 +67,7 @@ export const App: React.FC = () => {
         setNewTodoTitle('');
       })
       .catch(() => {
-        handleError('Unable to add a todo');
+        handleError(ErrorType.AddTodoFailed);
         setTodos(todos);
       })
       .finally(() => {
@@ -71,38 +75,39 @@ export const App: React.FC = () => {
       });
   };
 
-  const onTodoDelete = (todoId: number) => {
-    setProcessingTodos(prevProcessing => [...prevProcessing, todoId]);
+  const onTodoDelete = useCallback(
+    (todoId: number) => {
+      setProcessingTodos(prevProcessing => [...prevProcessing, todoId]);
 
-    deleteTodo(todoId)
-      .then(() => {
-        setTodos(prev => prev.filter(prevTodo => prevTodo.id !== todoId));
-      })
-      .catch(() => handleError('Unable to delete a todo'))
-      .finally(() => {
-        setProcessingTodos(prevIds => prevIds.filter(id => id !== todoId));
-      });
-  };
+      deleteTodo(todoId)
+        .then(() => {
+          setTodos(prev => prev.filter(prevTodo => prevTodo.id !== todoId));
+        })
+        .catch(() => handleError(ErrorType.DeleteTodoFailed))
+        .finally(() => {
+          setProcessingTodos(prevIds => prevIds.filter(id => id !== todoId));
+        });
+    },
+    [setTodos, setProcessingTodos, handleError],
+  );
 
-  const onTodoDeleteCompleted = () => {
+  const onTodoDeleteCompleted = useCallback(() => {
     const completedTodos = todos.filter(todo => todo.completed);
 
     completedTodos.forEach(todo => onTodoDelete(todo.id));
-  };
+  }, [todos, onTodoDelete]);
 
   useEffect(() => {
     getTodos()
       .then(setTodos)
-      .catch(() => handleError('Unable to load todos'));
+      .catch(() => handleError(ErrorType.LoadTodosFailed));
   }, []);
 
   useEffect(() => {
     addInputRef.current?.focus();
   }, [todos, tempTodo]);
 
-  return !USER_ID ? (
-    <UserWarning />
-  ) : (
+  return (
     <div className="todoapp">
       <h1 className="todoapp__title">todos</h1>
 
@@ -166,7 +171,7 @@ export const App: React.FC = () => {
           data-cy="HideErrorButton"
           type="button"
           className="delete"
-          onClick={() => setErrorMsg('')}
+          onClick={() => setErrorMsg(ErrorType.Default)}
         />
         {errorMsg}
       </div>
